@@ -3,9 +3,10 @@ import { ethers } from "hardhat";
 import { expect } from "chai";
 import Ajv from 'ajv';
 import { TestDataItemStruct } from "../typechain-types/EIP712Decoder";
+import exp from "constants";
 const ethSigUtil = require("@metamask/eth-sig-util");
 const { SignTypedDataVersion, TypedDataUtils, recoverTypedSignature } = require("@metamask/eth-sig-util");
-const typedMessage = require("../../typedef/test-data-struct");
+const typedMessage = require("../typedef/test-data-item");
 
 export const TYPED_MESSAGE_SCHEMA = {
     type: 'object',
@@ -59,11 +60,11 @@ describe("TestUserOfEIP712Decoder", function () {
     describe("Deployment", function () {
         it("Should generate match sigs by signTypedData with Both @metamask/eth-sig-util and @hardhat/ethers", async function () {
             const { owner, recipient, contract } = await loadFixture(deployFixture);
-            const fakePrivateKeyString = "0x4af1bceebf7f3634ec3cff8a2c38e51178d5d4ce585c52d6043e5e2cc3418bb0";
-            const testWallet = new ethers.Wallet(fakePrivateKeyString);
-            const fakeChainId = await contract.getFakeChainIdForTest();
+            const fakePrivateKeyString = "4af1bceebf7f3634ec3cff8a2c38e51178d5d4ce585c52d6043e5e2cc3418bb0";
+            const testWallet = new ethers.Wallet("0x" + fakePrivateKeyString);
+            const fakeChainId = 1;
             const fakeContractAddress = await contract.getFakeContractAddressForTest();
-            const fakeTokenId = ethers.utils.hexZeroPad(ethers.utils.arrayify(0x01), 32);
+            const fakeTokenId = 1;
 
             let domain = {
                 ...typedMessage.domain,
@@ -71,22 +72,25 @@ describe("TestUserOfEIP712Decoder", function () {
                 verifyingContract: fakeContractAddress
             };
             let message = {
-                from: owner.address,
-                to: recipient.address,
-                fakeTokenId,
+                tokenId: fakeTokenId,
             };
 
             let version = SignTypedDataVersion.V4;
             const privateKeyBuffer = Buffer.from(fakePrivateKeyString, "hex");
+            let types = {
+                TestDataItem: typedMessage.types.TestDataItem
+            };
+            let typesWithEIP712Domain = {
+                ...types,
+                EIP712Domain: typedMessage.types.EIP712Domain
+            };
+
             const sigByMetaMask = ethSigUtil.signTypedData({
                 privateKey: privateKeyBuffer,
                 data: {
                     primaryType: typedMessage.primaryType,
                     domain,
-                    types: {
-                        EIP712Domain: typedMessage.types.EIP712Domain,
-                        TestDataItem: typedMessage.types.TestDataItem
-                    },
+                    types: typesWithEIP712Domain,
                     message,
                 },
                 version: version
@@ -121,7 +125,7 @@ describe("TestUserOfEIP712Decoder", function () {
             console.log(`SigHash by EthersJS =`, sigHashByEthers);
             let sigHashContract = await contract.getSigHashForTest(
                 fakeTokenId);
-
+            expect(sigHashByEthers).to.equal(sigHashContract);
             console.log(`PacketHash =`, packetHash);
 
             let sigByHardhat = await testWallet._signTypedData(
@@ -143,7 +147,7 @@ describe("TestUserOfEIP712Decoder", function () {
                         ]
                     } ,
                     message,
-                    primaryType: "FunctionCallTransferFrom"
+                    primaryType: typedMessage.primaryType
                 },
                 version: version
             });
@@ -152,13 +156,7 @@ describe("TestUserOfEIP712Decoder", function () {
                 .to.equal(ethers.utils.getAddress(testWallet.address));
 
             expect(sigByMetaMask).to.equal(sigByHardhat);
-            expect(await contract.verifyEndorsement(
-                "transferFrom(address from,address to,tokenId)",
-                owner.address,
-                recipient.address,
-                tokenId,
-                sigByHardhat
-            )).to.equal(testWallet.address);
+
         });
 
     });

@@ -34,7 +34,7 @@ jobs:
                       ${{ runner.os }}-node-v${{ matrix.node }}-
             - name: Install Dependencies
               run: yarn install
-            - name: Install Dependencies
-              run: yarn build
+            - name: Compile contracts
+              run: yarn compile
             - name: Run tests
               run: yarn test

@@ -1,7 +1,10 @@
 {
   "name": "TestEIP712-codegen",
   "author": "Zainan Victor Zhou <zzn-ercref@zzn.im>",
-  "scripts": {},
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test"
+  },
   "devDependencies": {
     "@ensdomains/ens-contracts": "^0.0.15",
     "@ethersproject/abi": "^5.4.7",

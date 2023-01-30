@@ -1,0 +1,40 @@
+name: Tests
+'on':
+    # push:
+    pull_request:
+        types:
+            - opened
+            - synchronize
+            - reopened
+    schedule:
+        - cron: '0 6 * * 0'
+
+jobs:
+    uint_test_job:
+        name: Unit Tests
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  fetch-depth: 1000 # Set this according to the size of your git history
+            - name: Fetch base
+              run: git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1000
+            - uses: actions/setup-node@v3
+              with:
+                  node-version: '${{ matrix.node }}'
+            - uses: actions/checkout@v3
+            - name: 'Cache node_modules'
+              uses: actions/cache@v3
+              with:
+                  path: ~/.npm
+                  key: ${{ runner.os }}-node-v${{ matrix.node }}-${{ hashFiles('**/package.json') }}
+                  restore-keys: |
+                      ${{ runner.os }}-node-v${{ matrix.node }}-
+            - name: Install Dependencies
+              run: yarn install
+            - name: Install Dependencies
+              run: yarn build
+            - name: Run tests
+              run: yarn test

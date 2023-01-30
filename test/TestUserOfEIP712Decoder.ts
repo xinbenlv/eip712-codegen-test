@@ -32,19 +32,6 @@ export const TYPED_MESSAGE_SCHEMA = {
     required: ['types', 'primaryType', 'domain', 'message'],
 };
 
-/**
- * Validate the given message with the typed message schema.
- *
- * @param typedMessage - The typed message to validate.
- * @returns Whether the message is valid.
- */
-function validateTypedMessageSchema(
-    typedMessage: Record<string, unknown>,
-): boolean {
-    const ajv = new Ajv();
-    const validate = ajv.compile(TYPED_MESSAGE_SCHEMA);
-    return validate(typedMessage);
-}
 describe("TestUserOfEIP712Decoder", function () {
     async function deployFixture() {
         // Contracts are deployed using the first signer/account by default
@@ -54,36 +41,101 @@ describe("TestUserOfEIP712Decoder", function () {
             typedMessage.domain.name,
             typedMessage.domain.version
         );
-        return { owner, recipient, contract };
+        const fakePrivateKeyString = "4af1bceebf7f3634ec3cff8a2c38e51178d5d4ce585c52d6043e5e2cc3418bb0";
+        const testWallet = new ethers.Wallet("0x" + fakePrivateKeyString);
+        const fakeChainId = 1;
+        const fakeContractAddress = await contract.getFakeContractAddressForTest();
+        const fakeTokenId = 1;
+
+        let domain = {
+            ...typedMessage.domain,
+            chainId: fakeChainId,
+            verifyingContract: fakeContractAddress
+        };
+        let message = {
+            tokenId: fakeTokenId,
+        };
+
+        let version = SignTypedDataVersion.V4;
+        const privateKeyBuffer = Buffer.from(fakePrivateKeyString, "hex");
+        let types = {
+            TestDataItem: typedMessage.types.TestDataItem
+        };
+        let typesWithEIP712Domain = {
+            ...types,
+            EIP712Domain: typedMessage.types.EIP712Domain
+        };
+        const sigHashContract = await contract.getSigHashForTest(
+            fakeTokenId);
+
+        return {
+            owner, recipient,
+            contract,
+            testWallet,
+            fakeChainId,
+            fakeContractAddress,
+            fakeTokenId,
+            fakePrivateKeyString,
+            domain, message, version, privateKeyBuffer, types, typesWithEIP712Domain,
+            sigHashContract,
+        };
     }
 
     describe("Deployment", function () {
-        it("Should generate match sigs by signTypedData with Both @metamask/eth-sig-util and @hardhat/ethers", async function () {
-            const { owner, recipient, contract } = await loadFixture(deployFixture);
-            const fakePrivateKeyString = "4af1bceebf7f3634ec3cff8a2c38e51178d5d4ce585c52d6043e5e2cc3418bb0";
-            const testWallet = new ethers.Wallet("0x" + fakePrivateKeyString);
-            const fakeChainId = 1;
-            const fakeContractAddress = await contract.getFakeContractAddressForTest();
-            const fakeTokenId = 1;
+        it("Contract should yield same sigHash with MetaMask", async function() {
+            const { domain, message, version, typesWithEIP712Domain, sigHashContract } = await loadFixture(deployFixture);
+            const sigHashByMetaMask = ethers.utils.hexlify(TypedDataUtils.eip712Hash({
+                primaryType: typedMessage.primaryType,
+                domain,
+                types: typesWithEIP712Domain,
+                message,
+            }, version));
+            expect(sigHashByMetaMask).to.equal(sigHashContract);
+        });
 
-            let domain = {
-                ...typedMessage.domain,
-                chainId: fakeChainId,
-                verifyingContract: fakeContractAddress
-            };
-            let message = {
+        it("Contract should yield same sigHash with Hardhat/Ethers", async function() {
+            const { domain, message, version, typesWithEIP712Domain, fakeTokenId, sigHashContract, contract } = await loadFixture(deployFixture);
+            const testDataItem:TestDataItemStruct = {
                 tokenId: fakeTokenId,
             };
+            const packetHash = await contract.GET_TESTDATAITEM_PACKETHASH(
+                testDataItem
+            );
 
-            let version = SignTypedDataVersion.V4;
-            const privateKeyBuffer = Buffer.from(fakePrivateKeyString, "hex");
-            let types = {
-                TestDataItem: typedMessage.types.TestDataItem
-            };
-            let typesWithEIP712Domain = {
-                ...types,
-                EIP712Domain: typedMessage.types.EIP712Domain
-            };
+            let domainHash = await contract.getDomainHashForTest();
+
+            let sigHashByEthers = ethers.utils.keccak256(
+                ethers.utils.concat([
+                    ethers.utils.toUtf8Bytes('\x19\x01'),
+                    ethers.utils.arrayify(domainHash),
+                    ethers.utils.arrayify(packetHash)
+                ])
+            );
+            expect(sigHashByEthers).to.equal(sigHashContract);
+        });
+
+        it("MetaMask and Hardhat/Ethers should yield same signatures", async function() {
+            const { domain, message, version, typesWithEIP712Domain, sigHashContract, privateKeyBuffer, testWallet, types } = await loadFixture(deployFixture);
+            const sigByMetaMask = ethSigUtil.signTypedData({
+                privateKey: privateKeyBuffer,
+                data: {
+                    primaryType: typedMessage.primaryType,
+                    domain,
+                    types: typesWithEIP712Domain,
+                    message,
+                },
+                version: version
+            });
+            const sigByHardhat = await testWallet._signTypedData(
+                domain,
+                types,
+                message
+            );
+            expect(sigByMetaMask).to.equal(sigByHardhat);
+        });
+
+        it("MetaMask should recover to address with Hardhat/Ethers", async function () {
+            const { domain, message, version, typesWithEIP712Domain, sigHashContract, privateKeyBuffer, testWallet, types } = await loadFixture(deployFixture);
 
             const sigByMetaMask = ethSigUtil.signTypedData({
                 privateKey: privateKeyBuffer,
@@ -95,46 +147,13 @@ describe("TestUserOfEIP712Decoder", function () {
                 },
                 version: version
             });
-
-            const sigHashByMetaMask = ethers.utils.hexlify(TypedDataUtils.eip712Hash({
-                primaryType: typedMessage.primaryType,
-                domain,
-                types: {
-                    EIP712Domain: typedMessage.types.EIP712Domain,
-                    TestDataItem: typedMessage.types.TestDataItem
-                },
-                message,
-            }, version));
-            const testDataItem:TestDataItemStruct = {
-                tokenId: fakeTokenId,
-            };
-            const packetHash = await contract.GET_TESTDATAITEM_PACKETHASH(
-                testDataItem
-            );
-
-            let domainHash = await contract.getDomainHashForTest();
-            console.log(`DomainHash from Contract =`, domainHash);
-
-            let sigHashByEthers = ethers.utils.keccak256(
-                ethers.utils.concat([
-                    ethers.utils.toUtf8Bytes('\x19\x01'),
-                    ethers.utils.arrayify(domainHash),
-                    ethers.utils.arrayify(packetHash)
-                ])
-            );
-            console.log(`SigHash by EthersJS =`, sigHashByEthers);
-            let sigHashContract = await contract.getSigHashForTest(
-                fakeTokenId);
-            expect(sigHashByEthers).to.equal(sigHashContract);
-            console.log(`PacketHash =`, packetHash);
-
-            let sigByHardhat = await testWallet._signTypedData(
+            const sigByHardhat = await testWallet._signTypedData(
                 domain,
                 types,
                 message
             );
-            console.log(`sigByMetaMask TS =`, sigByMetaMask);
-            let recoveredAddress = recoverTypedSignature({
+            expect(sigByMetaMask).to.equal(sigByHardhat);
+            const metaMaskRecoveredAddress = recoverTypedSignature({
                 signature: sigByMetaMask,
                 data: {
                     domain,
@@ -151,12 +170,45 @@ describe("TestUserOfEIP712Decoder", function () {
                 },
                 version: version
             });
-            console.log(`Recovered address TS =`, recoveredAddress);
-            expect(ethers.utils.getAddress(recoveredAddress))
-                .to.equal(ethers.utils.getAddress(testWallet.address));
-
-            expect(sigByMetaMask).to.equal(sigByHardhat);
-
+            const ethersRecoveredAddress = await ethers.utils.recoverAddress(
+                sigHashContract,
+                sigByHardhat
+            );
+            expect(
+                ethers.utils.getAddress(metaMaskRecoveredAddress))
+                .to.equal(ethers.utils.getAddress(ethersRecoveredAddress));
+        });
+        it("Contract should recover same address with MetaMask", async function () {
+            const {contract, domain, message, version, typesWithEIP712Domain, sigHashContract, privateKeyBuffer, testWallet, types, fakeTokenId } = await loadFixture(deployFixture);
+            const sigByMetaMask = ethSigUtil.signTypedData({
+                privateKey: privateKeyBuffer,
+                data: {
+                    primaryType: typedMessage.primaryType,
+                    domain,
+                    types: typesWithEIP712Domain,
+                    message,
+                },
+                version: version
+            });
+            const metaMaskRecoveredAddress = recoverTypedSignature({
+                signature: sigByMetaMask,
+                data: {
+                    domain,
+                    types: { ...types,
+                        EIP712Domain: [
+                            { name: 'name', type: 'string' },
+                            { name: 'version', type: 'string' },
+                            { name: 'chainId', type: 'uint256' },
+                            { name: 'verifyingContract', type: 'address' },
+                        ]
+                    } ,
+                    message,
+                    primaryType: typedMessage.primaryType
+                },
+                version: version
+            });
+            const contractRecoveredAddress = await contract.recoverSignature(fakeTokenId, sigByMetaMask);
+            expect(ethers.utils.getAddress(contractRecoveredAddress)).to.equal(ethers.utils.getAddress(metaMaskRecoveredAddress));
         });
 
     });

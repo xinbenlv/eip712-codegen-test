@@ -10,31 +10,37 @@ import "hardhat/console.sol";
 contract UserOfEIP712Decoder is
     EIP712Decoder
 {
-    uint256 public constant deterministicFakeChainId = 1;
-    address public constant deterministicFakeContractAddress = 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC;
+    uint256 public verifyingChainId = 2;
+    address public verifyingContract = 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC;
     bytes32 public immutable domainHash;
 
-    constructor(string memory contractName, string memory version) {
+    constructor(
+        string memory _contractName,
+        string memory _version,
+        uint256 _verifyingChainId,
+        address _verifyingContract) {
+        verifyingChainId = _verifyingChainId;
+        verifyingContract = _verifyingContract;
         domainHash = getEIP712DomainHash(
-            contractName,
-            version,
-            deterministicFakeChainId, // For deterministic testing
-            deterministicFakeContractAddress // For deterministic testing
+            _contractName,
+            _version,
+            _verifyingChainId, // For deterministic testing
+            _verifyingContract // For deterministic testing
         );
     }
 
     function getEIP712DomainHash(
-        string memory contractName,
-        string memory version,
-        uint256 chainId,
-        address verifyingContract
+        string memory _contractName,
+        string memory _version,
+        uint256 _verifyingChainId,
+        address _verifyingContract
     ) public pure returns (bytes32) {
         bytes memory encoded = abi.encode(
             EIP712DOMAIN_TYPEHASH,
-            keccak256(bytes(contractName)),
-            keccak256(bytes(version)),
-            chainId,
-            verifyingContract
+            keccak256(bytes(_contractName)),
+            keccak256(bytes(_version)),
+            _verifyingChainId,
+            _verifyingContract
         );
         return keccak256(encoded);
     }
@@ -50,12 +56,12 @@ contract UserOfEIP712Decoder is
         return _getSigHash(tokenId);
     }
 
-    function getFakeChainIdForTest() public pure returns (uint256) {
-        return deterministicFakeChainId;
+    function getVerifyingChainIdForTest() public view returns (uint256) {
+        return verifyingChainId;
     }
 
-    function getFakeContractAddressForTest() public pure returns (address) {
-        return deterministicFakeContractAddress;
+    function getVerifyingContractAddressForTest() public view returns (address) {
+        return verifyingContract;
     }
 
     function _getSigHash(

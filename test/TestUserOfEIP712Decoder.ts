@@ -39,13 +39,15 @@ describe("TestUserOfEIP712Decoder", function () {
             // Contracts are deployed using the first signer/account by default
             const [owner, recipient] = await ethers.getSigners();
             const Factory = await ethers.getContractFactory("UserOfEIP712Decoder");
+            const fakeContractAddress = "0xcccccccccccccccccccccccccccccccccccccccc";
             const contract = await Factory.deploy(
                 typedMessage.domain.name,
-                typedMessage.domain.version
+                typedMessage.domain.version,
+                fakeChainId,
+                fakeContractAddress
             );
             const fakePrivateKeyString = "4af1bceebf7f3634ec3cff8a2c38e51178d5d4ce585c52d6043e5e2cc3418bb0";
             const testWallet = new ethers.Wallet("0x" + fakePrivateKeyString);
-            const fakeContractAddress = await contract.getFakeContractAddressForTest();
             const fakeTokenId = 123;
 
             let domain = {
@@ -66,8 +68,7 @@ describe("TestUserOfEIP712Decoder", function () {
                 ...types,
                 EIP712Domain: typedMessage.types.EIP712Domain
             };
-            const sigHashContract = await contract.getSigHashForTest(
-                fakeTokenId);
+            const sigHashContract = await contract.getSigHashForTest(fakeTokenId);
 
             return {
                 owner, recipient,
